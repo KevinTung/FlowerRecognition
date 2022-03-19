@@ -1,4 +1,5 @@
 import os
+import json
 import jittor as jt
 from jittor import nn
 from jittor import transform
@@ -6,10 +7,22 @@ from jittor.dataset import Dataset
 from jittor.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
 import sys
+
 import argparse
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
+
+import seaborn as sn
+import matplotlib.pyplot as plt
+
+expID = 'baseline'
+data_path = './outputs/'+str(expID)
+pic_path='./outputs/'+str(expID)+'/confusion_matrix'
+if not os.path.isdir(data_path):
+    os.mkdir(data_path)
+if not os.path.isdir(pic_path):
+    os.mkdir(pic_path)
 
 jt.flags.use_cuda = 1
 
@@ -73,7 +86,7 @@ def ConvMixer_768_32(num_classes: int = 1000, **kwargs):
 
 # ========== ./tools/train.py ================= # 
 
-def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter, scheduler):
+def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter, scheduler,training_datas):
     model.train()
     total_acc = 0
     total_num = 0
@@ -99,16 +112,27 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter
         pbar.set_description(f'Epoch {epoch} loss={sum(losses) / len(losses):.2f} '
                              f'acc={total_acc / total_num:.2f}')
     scheduler.step()
+    training_datas.append({"Epoch":epoch,"loss":sum(losses) / len(losses),"acc":total_acc / total_num})
 
-def valid_one_epoch(model, val_loader, epoch):
+def valid_one_epoch(model, val_loader, epoch,valid_datas):
     model.eval()
     total_acc = 0
     total_num = 0
+
+    #confusion matrix
+    cm=np.zeros(shape=(102,103))
 
     pbar = tqdm(val_loader, desc=f'Epoch {epoch} [VALID]')
     for i, (images, labels) in enumerate(pbar):
         output = model(images)
         pred = np.argmax(output.data, axis=1)
+        for j in range(0,labels.data.shape[0]):
+            # print("label:{} pred:{}".format(labels.data[j],pred[j]))
+            if(pred[j]>101):
+                cm[labels.data[j]][102]+=1
+            else:
+                cm[labels.data[j]][pred[j]]+=1
+
 
         acc = np.sum(pred == labels.data)
         total_acc += acc
@@ -116,10 +140,30 @@ def valid_one_epoch(model, val_loader, epoch):
 
         pbar.set_description(f'Epoch {epoch} acc={total_acc / total_num:.2f}')
 
+    f, ax = plt.subplots(figsize=(16, 9))
+    ax = sn.heatmap(cm, annot=False, fmt='.20g')
+    ax.set_xlabel('predict')
+    ax.set_ylabel('true')
+    plt.savefig(pic_path+'/cm_{expID}_{epoch}.jpg'.format(expID=expID,epoch=epoch))
+    # print("epoch {epoch} completed.".format(epoch=epoch))
+
     acc = total_acc / total_num
+    valid_datas.append({"Epoch":epoch,"acc":acc})
+
     return acc
 
 # ========== ./datasets/dataloader.py =============== # 
+
+def output_data_to_file(training_datas,valid_datas):
+    f1 = open(data_path+'/train_each_step.txt', 'a') #2 ways to write, to ensure that data don't lose
+    f1.write(json.dumps(training_datas[len(training_datas)-1]))
+    f1.write('\n')
+    f1.close()
+
+    f2 = open(data_path+'/valid_each_step.txt', 'a') 
+    f2.write(json.dumps(valid_datas[len(valid_datas)-1]))
+    f2.write('\n')
+    f2.close()
 
 data_transforms = {
     'train': transform.Compose([
@@ -171,12 +215,26 @@ scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #le
 epochs = 300
 best_acc = 0.0
 best_epoch = 0
+
+training_datas = []
+valid_datas = []
 for epoch in range(epochs):
-    train_one_epoch(model, traindataset, criterion, optimizer, epoch, 1, scheduler)
-    acc = valid_one_epoch(model, validdataset, epoch)
+    train_one_epoch(model, traindataset, criterion, optimizer, epoch, 1, scheduler,training_datas)
+    acc = valid_one_epoch(model, validdataset, epoch,valid_datas)
+    output_data_to_file(training_datas,valid_datas)
+
     if acc > best_acc:
         best_acc = acc
         best_epoch = epoch
         # model.save(f'ConvMixer-{epoch}-{acc:.2f}.pkl')
 
+f1 = open(data_path+'/train_total.txt', 'a')
+f2 = open(data_path+'/valid_total.txt', 'a')
+f1.write(json.dumps(training_datas))
+f2.write(json.dumps(valid_datas))
+f1.close()
+f2.close()
+f = open(data_path+'/best.txt', 'a')
+f.write(best_acc,best_epoch)
+f.close()
 print(best_acc, best_epoch)
