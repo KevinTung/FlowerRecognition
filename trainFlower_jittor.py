@@ -1,16 +1,25 @@
 import os
+import sys
+import json
 import jittor as jt
 from jittor import nn
 from jittor import transform
 from jittor.dataset import Dataset
 from jittor.lr_scheduler import CosineAnnealingLR, MultiStepLR
+sys.path.append('../../Jittor-Image-Models') #for importing jimm
+from jimm.loss import CrossEntropy, LabelSmoothingCrossEntropy
 
-import sys
 import argparse
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+expID = 'lbl_smth'
+data_path = './outputs/'+str(expID)
+if not os.path.isdir(data_path):
+    os.mkdir(data_path)
+
+# import matplotlib.pyplot as plt
 jt.flags.use_cuda = 1
 
 # ============== ./tools/util.py ================== # 
@@ -73,12 +82,11 @@ def ConvMixer_768_32(num_classes: int = 1000, **kwargs):
 
 # ========== ./tools/train.py ================= # 
 
-def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter, scheduler):
+def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter, scheduler, training_datas):
     model.train()
     total_acc = 0
     total_num = 0
     losses = []
-
     pbar = tqdm(train_loader, desc=f'Epoch {epoch} [TRAIN]')
     for i, (images, labels) in enumerate(pbar):
         # print(images.shape)
@@ -99,8 +107,9 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter
         pbar.set_description(f'Epoch {epoch} loss={sum(losses) / len(losses):.2f} '
                              f'acc={total_acc / total_num:.2f}')
     scheduler.step()
+    training_datas.append({"Epoch":epoch,"loss":sum(losses) / len(losses),"acc":total_acc / total_num})
 
-def valid_one_epoch(model, val_loader, epoch):
+def valid_one_epoch(model, val_loader, epoch,valid_datas):
     model.eval()
     total_acc = 0
     total_num = 0
@@ -117,9 +126,23 @@ def valid_one_epoch(model, val_loader, epoch):
         pbar.set_description(f'Epoch {epoch} acc={total_acc / total_num:.2f}')
 
     acc = total_acc / total_num
+    valid_datas.append({"Epoch":epoch,"acc":acc})
+
     return acc
 
 # ========== ./datasets/dataloader.py =============== # 
+
+def output_data_to_file(training_datas,valid_datas):
+    f1 = open(data_path+'/train_each_step.txt', 'a') #2 ways to write, to ensure that data don't lose
+    f1.write(json.dumps(training_datas[len(training_datas)-1]))
+    f1.write('\n')
+    f1.close()
+
+    f2 = open(data_path+'/valid_each_step.txt', 'a') 
+    f2.write(json.dumps(valid_datas[len(valid_datas)-1]))
+    f2.write('\n')
+    f2.close()
+
 
 data_transforms = {
     'train': transform.Compose([
@@ -162,7 +185,8 @@ test_num = len(testdataset)
 
 jt.set_global_seed(648)
 model = ConvMixer_768_32()
-criterion = nn.CrossEntropyLoss()
+# criterion = nn.CrossEntropyLoss()
+criterion = LabelSmoothingCrossEntropy(smoothing=0.1) #How to Choose Alpha? 
 optimizer = nn.Adam(model.parameters(), lr=0.003, weight_decay=1e-4)
 scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
 # scheduler = CosineAnnealingLR(optimizer, 15, 1e-5)
@@ -171,12 +195,26 @@ scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #le
 epochs = 300
 best_acc = 0.0
 best_epoch = 0
+
+training_datas = []
+valid_datas = []
 for epoch in range(epochs):
-    train_one_epoch(model, traindataset, criterion, optimizer, epoch, 1, scheduler)
-    acc = valid_one_epoch(model, validdataset, epoch)
+    train_one_epoch(model, traindataset, criterion, optimizer, epoch, 1, scheduler,training_datas)
+    acc = valid_one_epoch(model, validdataset, epoch,valid_datas)
+    output_data_to_file(training_datas,valid_datas)
+    
     if acc > best_acc:
         best_acc = acc
         best_epoch = epoch
         # model.save(f'ConvMixer-{epoch}-{acc:.2f}.pkl')
 
+f1 = open(data_path+'/train_total.txt', 'a')
+f2 = open(data_path+'/valid_total.txt', 'a')
+f1.write(json.dumps(training_datas))
+f2.write(json.dumps(valid_datas))
+f1.close()
+f2.close()
+f = open(data_path+'/best.txt', 'a')
+f.write(best_acc,best_epoch)
+f.close()
 print(best_acc, best_epoch)
