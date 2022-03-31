@@ -92,3 +92,14 @@ def MLPMixer_S_16(num_classes: int = 1000, **kwargs):
                     num_classes=num_classes,
                     **kwargs)
     return model
+
+def MLPMixer_128_4(num_classes: int = 1000, **kwargs):
+    model = MLPMixerForImageClassification(patch_size = 16, d_model = 128, depth = 4, 
+                    num_classes=num_classes,
+                    **kwargs)
+    return model
+def MLPMixer_64_8(num_classes: int = 1000, **kwargs):
+    model = MLPMixerForImageClassification(patch_size = 16, d_model = 64, depth = 8, 
+                    num_classes=num_classes,
+                    **kwargs)
+    return model

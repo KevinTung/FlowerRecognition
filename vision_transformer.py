@@ -357,10 +357,23 @@ def vit_small_patch16_224(pretrained=False, **kwargs):
     if pretrained:
         # NOTE my scale was wrong for original weights, leaving this here until I have better ones for this model
         kwargs.setdefault('qk_scale', 768 ** -0.5)
-    model = VisionTransformer(patch_size=16, embed_dim=768, depth=8, num_heads=8, mlp_ratio=3., **kwargs)
+    
+    model = VisionTransformer(num_classes=102,patch_size=16, embed_dim=768, depth=8, num_heads=8, mlp_ratio=3., **kwargs)
+    print("VIT MODEL:",model)
     model.default_cfg = default_cfgs['vit_small_patch16_224']
     if pretrained:
         load_pretrained(
             model, num_classes=kwargs.get('num_classes', 0), in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
     return model
 
+
+def vit_small_patch256_4(pretrained=False, **kwargs):
+    if pretrained:
+        # NOTE my scale was wrong for original weights, leaving this here until I have better ones for this model
+        kwargs.setdefault('qk_scale', 768 ** -0.5)
+    model = VisionTransformer(num_classes=102,patch_size=16, embed_dim=256, depth=4, num_heads=8, mlp_ratio=3., **kwargs)
+    model.default_cfg = default_cfgs['vit_small_patch16_224']
+    if pretrained:
+        load_pretrained(
+            model, num_classes=kwargs.get('num_classes', 0), in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
+    return model

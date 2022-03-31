@@ -4,21 +4,27 @@ import jittor as jt
 from jittor import nn
 from jittor import transform
 from jittor.dataset import Dataset
-from jittor.lr_scheduler import CosineAnnealingLR, MultiStepLR
+from jittor.lr_scheduler import CosineAnnealingLR, MultiStepLR #,CosineAnnealingWarmRestarts
 
 import sys
-
+sys.path.append('../../Jittor-Image-Models') #for importing jimm
+from jimm.loss import CrossEntropy, LabelSmoothingCrossEntropy
 import argparse
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
-
+import torch
 import seaborn as sn
 import matplotlib.pyplot as plt
-
-expID = 'baseline'
+from mlp_mixer import MLPMixer_S_16
+from vision_transformer import vit_small_patch16_224
+expID = 'vit_lbl_cos_7'
 data_path = './outputs/'+str(expID)
 pic_path='./outputs/'+str(expID)+'/confusion_matrix'
+model_path='./outputs/'+str(expID)+'/model'
+print("ExpID:",expID)
+print("Datapath:",data_path)
+print("PicPath:",pic_path)
 if not os.path.isdir(data_path):
     os.mkdir(data_path)
 if not os.path.isdir(pic_path):
@@ -149,6 +155,7 @@ def valid_one_epoch(model, val_loader, epoch,valid_datas):
 
     acc = total_acc / total_num
     valid_datas.append({"Epoch":epoch,"acc":acc})
+    plt.close(f)
 
     return acc
 
@@ -204,14 +211,23 @@ test_num = len(testdataset)
 
 # ========== ./run.py =============== # 
 
-jt.set_global_seed(648)
-model = ConvMixer_768_32()
-criterion = nn.CrossEntropyLoss()
-optimizer = nn.Adam(model.parameters(), lr=0.003, weight_decay=1e-4)
-scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
+jt.set_global_seed(537)
+# model = ConvMixer_768_32(num_classes=102)
+model = vit_small_patch16_224()
+# model = MLPMixer_S_16(num_classes=102)
+# criterion = nn.CrossEntropyLoss()
+criterion = LabelSmoothingCrossEntropy(smoothing=0.1)
+# optimizer = nn.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
+# scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
 # scheduler = CosineAnnealingLR(optimizer, 15, 1e-5)
+# scheduler = CosineAnnealingWarmRestarts(optimizer, 5, T_mult=2, eta_min=1e-6, last_epoch=- 1, verbose=False)
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult=1, eta_min=0, last_epoch=- 1, verbose=False)
 
-
+# slow decay
+optimizer = nn.Adam(model.parameters(), lr=0.0005, weight_decay=5e-5)
+# scheduler = CosineAnnealingLR(optimizer, 20, 1e-7)
+# scheduler = CosineAnnealingLR(optimizer, 50, 0)
+scheduler = CosineAnnealingLR(optimizer, 20, 5e-6)
 epochs = 300
 best_acc = 0.0
 best_epoch = 0
@@ -226,7 +242,7 @@ for epoch in range(epochs):
     if acc > best_acc:
         best_acc = acc
         best_epoch = epoch
-        # model.save(f'ConvMixer-{epoch}-{acc:.2f}.pkl')
+        model.save(f'{model_path}-{epoch}-{acc:.2f}.pkl')
 
 f1 = open(data_path+'/train_total.txt', 'a')
 f2 = open(data_path+'/valid_total.txt', 'a')
@@ -235,6 +251,7 @@ f2.write(json.dumps(valid_datas))
 f1.close()
 f2.close()
 f = open(data_path+'/best.txt', 'a')
-f.write(best_acc,best_epoch)
+f.write(best_acc)
+f.write(best_epoch)
 f.close()
 print(best_acc, best_epoch)
