@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import jittor as jt
 from jittor import nn
@@ -30,6 +31,12 @@ if not os.path.isdir(data_path):
 if not os.path.isdir(pic_path):
     os.mkdir(pic_path)
 
+expID = 'lbl_smth'
+data_path = './outputs/'+str(expID)
+if not os.path.isdir(data_path):
+    os.mkdir(data_path)
+
+# import matplotlib.pyplot as plt
 jt.flags.use_cuda = 1
 
 # ============== ./tools/util.py ================== # 
@@ -97,7 +104,6 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter
     total_acc = 0
     total_num = 0
     losses = []
-
     pbar = tqdm(train_loader, desc=f'Epoch {epoch} [TRAIN]')
     for i, (images, labels) in enumerate(pbar):
         # print(images.shape)
@@ -171,7 +177,6 @@ def output_data_to_file(training_datas,valid_datas):
     f2.write(json.dumps(valid_datas[len(valid_datas)-1]))
     f2.write('\n')
     f2.close()
-
 data_transforms = {
     'train': transform.Compose([
         transform.Resize((256,256)),
@@ -219,6 +224,13 @@ model = vit_small_patch16_224()
 criterion = LabelSmoothingCrossEntropy(smoothing=0.1)
 # optimizer = nn.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
 # scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
+
+jt.set_global_seed(648)
+model = ConvMixer_768_32()
+# criterion = nn.CrossEntropyLoss()
+criterion = LabelSmoothingCrossEntropy(smoothing=0.1) #How to Choose Alpha? 
+optimizer = nn.Adam(model.parameters(), lr=0.003, weight_decay=1e-4)
+scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
 # scheduler = CosineAnnealingLR(optimizer, 15, 1e-5)
 # scheduler = CosineAnnealingWarmRestarts(optimizer, 5, T_mult=2, eta_min=1e-6, last_epoch=- 1, verbose=False)
 # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult=1, eta_min=0, last_epoch=- 1, verbose=False)
@@ -244,6 +256,7 @@ for epoch in range(epochs):
         best_epoch = epoch
         model.save(f'{model_path}-{epoch}-{acc:.2f}.pkl')
 
+
 f1 = open(data_path+'/train_total.txt', 'a')
 f2 = open(data_path+'/valid_total.txt', 'a')
 f1.write(json.dumps(training_datas))
@@ -255,3 +268,4 @@ f.write(best_acc)
 f.write(best_epoch)
 f.close()
 print(best_acc, best_epoch)
+

@@ -1,5 +1,10 @@
 # This is Git's per-user configuration file.
 [user]
 # Please adapt and uncomment the following lines:
+<<<<<<< HEAD
 #	name = RFJC7
 #	email = 283386370@qq.com
+=======
+#	name = KevinTung
+#	email = asd135441@gmail.com
+>>>>>>> f56e0945925968ac3d0e102b008d7956b59836db
