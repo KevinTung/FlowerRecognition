@@ -7,6 +7,8 @@ from tqdm import tqdm
 from PIL import Image
 import numpy as np
 import argparse
+import sys
+sys.path.append('../../Jittor-Image-Models')  # for importing jimm
 from jimm.loss import CrossEntropy, LabelSmoothingCrossEntropy
 import os
 import sys
@@ -18,12 +20,12 @@ from jittor.dataset import Dataset
 # ,CosineAnnealingWarmRestarts
 from jittor.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
-import sys
-sys.path.append('../../Jittor-Image-Models')  # for importing jimm
-expID = 'vit_lbl_cos_7'
-data_path = './outputs/'+str(expID)
-pic_path = './outputs/'+str(expID)+'/confusion_matrix'
-model_path = './outputs/'+str(expID)+'/model'
+root = 'outputs-final/'
+prev_exp_name = 'vit_k=2/'
+expID = 'vit-k=2-test-3'
+data_path = './outputs-final/'+str(expID)
+pic_path = './outputs-final/'+str(expID)+'/confusion_matrix'
+model_path = './outputs-final/'+str(expID)+'/model'
 print("ExpID:", expID)
 print("Datapath:", data_path)
 print("PicPath:", pic_path)
@@ -31,11 +33,6 @@ if not os.path.isdir(data_path):
     os.mkdir(data_path)
 if not os.path.isdir(pic_path):
     os.mkdir(pic_path)
-
-expID = 'lbl_smth'
-data_path = './outputs/'+str(expID)
-if not os.path.isdir(data_path):
-    os.mkdir(data_path)
 
 # import matplotlib.pyplot as plt
 jt.flags.use_cuda = 1
@@ -114,7 +111,6 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, accum_iter
     pbar = tqdm(train_loader, desc=f'Epoch {epoch} [TRAIN]')
     for i, (images, labels) in enumerate(pbar):
         # print(images.shape)
-        # print("BLOCK-1",images.shape)
         output = model(images)
         loss = criterion(output, labels)
 
@@ -223,46 +219,54 @@ traindataset = image_datasets['train'].set_attrs(
     batch_size=batch_size, shuffle=True)
 validdataset = image_datasets['valid'].set_attrs(batch_size=64, shuffle=False)
 testdataset = image_datasets['test'].set_attrs(batch_size=1, shuffle=False)
-print("TRAIN DS LEN",len(traindataset),traindataset[62][0])
+
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'valid', 'test']}
 train_num = len(traindataset)
 val_num = len(validdataset)
 test_num = len(testdataset)
-print("ALL Nums",train_num,val_num,test_num)
 
 # ========== ./run.py =============== #
 
 jt.set_global_seed(537)
-# model = ConvMixer_768_32(num_classes=102)
+
+#single attribute test 
+# optimized configuration (need to check)
 model = vit_small_patch16_224()
-# model = MLPMixer_S_16(num_classes=102)
-# criterion = nn.CrossEntropyLoss()
-criterion = LabelSmoothingCrossEntropy(smoothing=0.1)
-# optimizer = nn.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
-# scheduler = MultiStepLR(optimizer, milestones=[40, 80, 160, 240], gamma=0.2) #learning rate decay
-
-jt.set_global_seed(648)
-# model = ConvMixer_768_32()
-# criterion = nn.CrossEntropyLoss()
 criterion = LabelSmoothingCrossEntropy(smoothing=0.1)  # How to Choose Alpha?
-optimizer = nn.Adam(model.parameters(), lr=0.003, weight_decay=1e-4)
-scheduler = MultiStepLR(optimizer, milestones=[
-                        40, 80, 160, 240], gamma=0.2)  # learning rate decay
-# scheduler = CosineAnnealingLR(optimizer, 15, 1e-5)
-# scheduler = CosineAnnealingWarmRestarts(optimizer, 5, T_mult=2, eta_min=1e-6, last_epoch=- 1, verbose=False)
-# scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult=1, eta_min=0, last_epoch=- 1, verbose=False)
-
-# slow decay
-optimizer = nn.Adam(model.parameters(), lr=0.0005, weight_decay=5e-5)
-# scheduler = CosineAnnealingLR(optimizer, 20, 1e-7)
-# scheduler = CosineAnnealingLR(optimizer, 50, 0)
+optimizer = nn.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
+# optimizer = nn.Adam(model.parameters(), lr=0.0005, weight_decay=5e-5)
 scheduler = CosineAnnealingLR(optimizer, 20, 5e-6)
+
+
+
+#load model
+from os import listdir
+from os.path import isfile, join
+
+mypath = root+prev_exp_name 
+onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+# print(onlyfiles[-1])
+# a = jt.load(join(mypath,onlyfiles[-1]))
+print("Model loading")
+model.load(join(mypath,"model-44-0.00.pkl"))
+
 epochs = 300
 best_acc = 0.0
 best_epoch = 0
 
 training_datas = []
 valid_datas = []
+
+
+#need to take care of ExpID 
+k = 2
+
+#TODO: test_task: load model
+#TODO: initialize partial k model
+
+#TODO: evaluation
+#what loss should we take? 
+
 for epoch in range(epochs):
     train_one_epoch(model, traindataset, criterion, optimizer,
                     epoch, 1, scheduler, training_datas)
@@ -273,6 +277,8 @@ for epoch in range(epochs):
         best_acc = acc
         best_epoch = epoch
         model.save(f'{model_path}-{epoch}-{acc:.2f}.pkl')
+
+
 
 
 f1 = open(data_path+'/train_total.txt', 'a')
@@ -286,3 +292,5 @@ f.write(best_acc)
 f.write(best_epoch)
 f.close()
 print(best_acc, best_epoch)
+
+

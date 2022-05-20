@@ -1,2 +1,4 @@
 data/
 outputs/
+outputs-final/
+*.pyc
